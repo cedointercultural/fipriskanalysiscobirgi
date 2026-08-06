@@ -7,11 +7,24 @@
 
 pca_factor <- function(thisdata, datasetname, namesdata){
 
+  coop.list <- unique(thisdata$coop_name)
+  
+  thisscenario = "ssp126"
+  
+  namesdata <- unique(thisdata$var_name)
+  
   #eliminate column with row names, needs only data values
-
-    data.set <- thisdata %>%
+for(eachcoop in coop.list){
+  
+  data.set <- thisdata %>%
+    dplyr::filter(coop_name == eachcoop & scenario == thisscenario) %>%
+    tidyr::pivot_wider(names_from = var_name, values_from=value) %>% 
     dplyr::select(all_of(namesdata)) %>%
     as.data.frame
+  
+}
+  
+    
 
   items.scale  <- ncol(data.set)
   #obtain correlation matrix

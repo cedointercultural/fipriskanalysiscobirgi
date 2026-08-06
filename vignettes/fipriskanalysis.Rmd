@@ -1,0 +1,942 @@
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+#library(fipriskanalysismexico)
+
+#system("sudo apt-get install -y fftw3", wait = TRUE)
+#system("sudo apt-get remove libfftw3-dev", wait = TRUE)
+#BiocManager::install("EBImage")
+devtools::load_all()
+```
+
+
+Get localities
+```{r}
+
+sheetlink = "https://docs.google.com/spreadsheets/d/1AQO3R9WlJVnxlHYavAZ7MHgB_ej_oYRMI58k7OmfFww"
+
+googlesheets4::gs4_deauth()
+coops <- googlesheets4::read_sheet(sheetlink, sheet = "cooperativas", col_types = c("cccccc"))
+  
+usethis::use_data(coops, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(coops)
+cat(data.description, file=here::here("R",paste0("data-","coops.R")))
+
+locs.selecc <- unique(coops$CVE_LOC)
+
+#only communities considered in the analysis
+localities  <- readr::read_csv(here::here("data-raw","inegi_coast_comm.csv")) %>% 
+  dplyr::filter(CVE_LOC %in% locs.selecc)
+
+
+usethis::use_data(localities, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(localities)
+cat(data.description, file=here::here("R",paste0("data-","localities.R")))
+
+
+#https://epsg.io/4485
+crs.proj.utm <- ("+proj=utm +zone=12 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +datum=NAD83") 
+crs.proj.wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+
+#convert to geographic layer
+
+loc.coords <- localities %>% 
+  dplyr::left_join(coops, by="CVE_LOC") %>%
+  dplyr::select(-localidad, -municipio, -entidad)
+
+readr::write_csv(loc.coords, here::here("outputs","cobi_locations.csv"))
+
+sp::coordinates(loc.coords) <- c("deci_lon","deci_lat")
+
+#definir proyeccion geografica y proyectar a utm
+sp::proj4string(loc.coords) <- crs.proj.wgs
+loc.coords.sf <- sf::st_as_sf(loc.coords)
+comunidades.coords.proj <- sf::st_transform(loc.coords.sf, crs.proj.utm)
+
+comunidades.coords.proj %>% 
+  sf::st_write(here::here("outputs","shp_files","comunidades_costeras_cobi.shp"), append = FALSE)
+
+#200 meter buffer based on potential fishing areas
+cost.utm.buff <- sf::st_buffer(comunidades.coords.proj, dist=200000)
+
+cost.utm.buff %>% 
+  sf::st_write(here::here("outputs","shp_files","comunidades_costeras_cobi_buffer.shp"), append = FALSE)
+
+#comunidades.coords.proj  <-  
+#  sf::st_read(here::here("outputs","shp_files","comunidades_costeras_SmartFish.shp"), append = FALSE)
+
+coastal.states <- c("Yucatán","Campeche")
+
+coast.state.mx <- sf::st_read(here::here("data-raw","shapefiles","ESTADOS.shp")) %>% 
+                       sf::st_transform(6362) %>% 
+  dplyr::filter(NOM_ENT %in% coastal.states)
+
+map.mx <- sf::st_read(here::here("data-raw","shapefiles","Mexico_lm.shp"))%>% 
+                       sf::st_transform(6362) 
+
+coast_points <- sf::st_centroid(coast.state.mx)
+coast_points.cor <- cbind(coast.state.mx, sf::st_coordinates(sf::st_centroid(coast.state.mx$geometry)))
+
+#plot
+
+#use for coordinates in map
+st.coords <- as.numeric(sf::st_bbox(coast.state.mx))
+
+#create color palette with 10 colors
+# Classic palette BuPu, with 4 colors
+coul <- RColorBrewer::brewer.pal(8, "Set1")
+
+# Add more colors to this palette :
+coul <- grDevices::colorRampPalette(coul)(10)
+
+subs.map <- ggplot2::ggplot(data = coast.state.mx) +
+  ggplot2::geom_sf() +
+  ggplot2::geom_text(data= coast_points.cor,ggplot2::aes(x=X, y=Y, label=NOM_ENT), color = "black", check_overlap = TRUE, size = 3) +
+  ggplot2::xlab("Longitude") + ggplot2::ylab("Latitude") +
+  ggspatial::annotation_scale(location = "bl", width_hint = 0.5) +
+  ggspatial::annotation_north_arrow(location = "tr", which_north = "true", 
+                                    pad_x = ggplot2::unit(0.2, "in"), 
+                                    pad_y = ggplot2::unit(0.2, "in")) +
+  ggplot2::theme_light() + 
+ # ggplot2::geom_sf(data = map.mx, fill = "transparent", color = "black") +
+  ggplot2::geom_sf(data = comunidades.coords.proj, mapping = ggplot2::aes(color = NOM_LOC), size=2) +
+  ggplot2::scale_color_manual(values = coul) +
+  ggplot2::labs(x= "Lon", y= "Lat", color = "Localidad") +
+  ggplot2::coord_sf(xlim = c(st.coords[3], st.coords[1]), ylim = c(st.coords[4], st.coords[2])) +
+  ggplot2::theme(legend.position="bottom") +
+  ggplot2::guides(colour=ggplot2::guide_legend(nrow=2))
+
+ggplot2::ggsave(here::here("outputs","figures","mapa_localidades_cobi.png"), plot = subs.map, width = 12, height = 9, units = "cm", dpi = 600)
+
+
+
+```
+
+Get data for components 
+```{r get fip data, message=FALSE, warning=FALSE, include=FALSE}
+
+
+#get species by coop
+
+
+#used to check for missing species
+#coop.loc.sp %>% dplyr::filter(is.na(region)) %>% View()
+
+
+#indicators were produced in Packard coastalvulnerabilityproject
+adaptivecapacitydata <- readr::read_csv(here::here("data-raw","tot_adaptive capacity.csv"))
+usethis::use_data(adaptivecapacitydata, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(adaptivecapacitydata)
+cat(data.description, file=here::here("R",paste0("data-","adaptivecapacitydata.R")))
+
+sensitivitydata <- readr::read_csv(here::here("data-raw","tot_sensitivity.csv"))
+usethis::use_data(sensitivitydata, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(sensitivitydata)
+cat(data.description, file=here::here("R",paste0("data-","sensitivitydata.R")))
+
+exposurehistorical <- readr::read_csv(here::here("data-raw","tot_exposure_historical.csv")) 
+usethis::use_data(exposurehistorical, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(exposurehistorical)
+cat(data.description, file=here::here("R",paste0("data-","exposurehistorical.R")))
+
+exposuressp126 <- readr::read_csv(here::here("data-raw","tot_exposure_ssp126.csv")) 
+usethis::use_data(exposuressp126, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(exposuressp126)
+cat(data.description, file=here::here("R",paste0("data-","exposuressp126.R")))
+
+exposuressp245 <- readr::read_csv(here::here("data-raw","tot_exposure_ssp245.csv")) 
+usethis::use_data(exposuressp245, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(exposuressp245)
+cat(data.description, file=here::here("R",paste0("data-","exposuressp245.R")))
+
+exposuressp585 <- readr::read_csv(here::here("data-raw","tot_exposure_ssp585.csv")) 
+usethis::use_data(exposuressp585, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(exposuressp585)
+cat(data.description, file=here::here("R",paste0("data-","exposuressp585.R")))
+
+#updates package documentation
+devtools::document()
+
+#rebuild and load the package
+devtools::load_all() # restarts and loads
+
+ 
+```
+
+
+Estimate statistics from changes in distribution by species and future scenario
+```{r sdm statistics, include=FALSE}
+
+sheetlink = "https://docs.google.com/spreadsheets/d/1AQO3R9WlJVnxlHYavAZ7MHgB_ej_oYRMI58k7OmfFww"
+
+googlesheets4::gs4_deauth()
+study.species <- googlesheets4::read_sheet(ss=sheetlink, sheet = "sdm_especies", col_types = c("ciiiii"))
+
+#estimate changes in distribution
+
+sdm.scenarios <- c("ssp126", "ssp245", "ssp585")
+
+sdm.species <- tolower(study.species$nombre_cientifico)
+
+sdm.files <- list.files(here::here("data-raw","sdm"), pattern="*.asc", recursive = TRUE)
+
+sdm.names <- tolower(sdm.files)
+
+species.no <- 1:length(sdm.species)
+#species.no <- 44:length(species)
+
+crs.eqap <- enmSdmX::getCRS('EE Americas') # Equal area projection Americas, use getCRS() to see all projections available
+
+dist.stats <- lapply(species.no, calc_distchange, sdm.species, crs.eqap, sdm.names, sdm.files, present.name = "historico", sdm.scenarios) 
+  
+ 
+dist.table <- dist.stats %>% dplyr::bind_rows()
+  
+list_res <- list()
+  
+for(eachscenario in 1:length(unique(dist.table$scenario))){
+
+  print(eachscenario)
+  this.scenario <- unique(dist.table$scenario)[eachscenario]
+  print(this.scenario)
+  
+  numeric.table <- dist.table %>%
+    dplyr::filter(scenario==this.scenario)
+  
+  process.num <- numeric.table %>% 
+    dplyr::select(dplyr::where(is.numeric)) %>%
+    caret::preProcess(., method=c("range"))
+  
+  num.scale <- numeric.table %>%
+    dplyr::select(dplyr::where(is.numeric)) %>%
+    stats::predict(process.num, .)
+  
+  dist.table.scaled <- dist.table %>%
+    dplyr::filter(scenario==this.scenario) %>%
+    dplyr::select(-dplyr::where(is.numeric)) %>%
+    dplyr::bind_cols(., num.scale)
+
+  list_res[[eachscenario]] <- dist.table.scaled  
+  
+}
+
+list_res.table <- do.call(rbind, list_res)
+
+readr::write_csv(list_res.table, here::here("outputs","distribution_stats_table.csv"))
+
+```
+
+Get lifehistory data
+```{r get lf, include=FALSE}
+
+#get species by coop
+sheetlink = "https://docs.google.com/spreadsheets/d/1AQO3R9WlJVnxlHYavAZ7MHgB_ej_oYRMI58k7OmfFww"
+
+#read species by coop sheet
+googlesheets4::gs4_deauth()
+coopsspecies <- googlesheets4::read_sheet(sheetlink, sheet = "especies_cooperativas", col_types = c("cccccccccc")) %>% 
+  dplyr::mutate(species = tolower(nombre_cientifico), nombre_comun = tolower(nombre_comun))
+  
+usethis::use_data(coopsspecies, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(coopsspecies)
+cat(data.description, file=here::here("R",paste0("data-","coopsspecies.R")))
+
+
+#get life history data for species
+lifehistorydata <- read_googlesheet(sheetlink, "caracteristicas_sp", "ccccccccccccccccccccccccciiiccccccccccccc")
+
+#read life history traits
+lifehistorycriteria <- read_googlesheet(sheetlink, "criterios_hv", "ccicicccccc")
+
+usethis::use_data(lifehistorydata, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(lifehistorydata)
+cat(data.description, file=here::here("R",paste0("data-","lifehistorydata.R")))
+
+fishery.species <- coopsspecies %>% 
+  dplyr::distinct(nombre_comun, nombre_cientifico) %>%   
+  dplyr::rename(species = nombre_cientifico) 
+  
+
+#process life history
+lifehistory.bc <- get_lifehistory(lifehistorydata, localities, lifehistorycriteria, fishery.species)
+
+#lifehistory.bc %>% View()
+
+readr::write_csv(lifehistory.bc, here::here("outputs","lifehistory_data.csv"))
+
+lifehistorytraits <- lifehistory.bc
+usethis::use_data(lifehistorytraits, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(lifehistorytraits)
+cat(data.description, file=here::here("R",paste0("data-","lifehistorytraits.R")))
+
+```
+
+Scale life history and biotic velocity
+
+```{r species sensitivity, include=FALSE}
+
+data(lifehistorytraits)
+data(localities)
+data(coopspecies)
+
+lifehistory.trait <- lifehistorytraits %>% 
+  dplyr::select(-value, -Type, -category, -topsis_weight) %>% 
+  tidyr::pivot_wider(names_from = traits, values_from = score) %>% 
+  tidyr::unnest(cols = c(maximum_age_yrs, age_at_maturity, fecundity_mean_eggs, habitat_specificity, temperature_range, salinity_range, depth_range, prey_specificity, spawning_period, spawning_cycle, dispersal_early_life_stages, early_life_history, sensitivity_OA, adult_mobility))
+
+lifehistory.nosp <- lifehistory.trait %>% 
+  dplyr::select(-species) 
+
+sp.col <- lifehistory.trait %>% 
+  dplyr::select(species) 
+
+#scale life history traits  
+maxs <- apply(lifehistory.nosp, 2, max)
+mins <- apply(lifehistory.nosp, 2, min)
+
+scaled.lifehistory <- scale(lifehistory.nosp, center = mins, scale = maxs - mins) %>% 
+  dplyr::bind_cols(sp.col, .) %>% 
+  dplyr::mutate(species=tolower(species)) 
+
+googlesheets4::gs4_deauth()
+#fix directionality of life history attributes, some were eliminated because it was unclear they could affect response to climate change
+sheetlink = "https://docs.google.com/spreadsheets/d/1AQO3R9WlJVnxlHYavAZ7MHgB_ej_oYRMI58k7OmfFww"
+
+vars.lf <- googlesheets4::read_sheet(sheetlink, sheet="direccion_hv")
+
+#modify values so that higher values are negative
+sens.lifehistory <- scaled.lifehistory %>% 
+  tidyr::pivot_longer(cols = 2:ncol(.), names_to = "var_name", values_to = "value") %>% 
+  dplyr::left_join(vars.lf, by="var_name") %>% 
+  dplyr::filter(!is.na(direction)) %>% 
+  dplyr::mutate(value = dplyr::if_else(direction == "higher_positive", 1 - value, value)) %>% 
+  dplyr::select(-direction, -var_name) %>% 
+  dplyr::rename(var_name = var_name_sp)
+
+sp.var.names <- sens.lifehistory %>% 
+  dplyr::distinct(var_name) %>%
+  dplyr::pull(var_name)
+ 
+#pivot wider
+scaled.sens.lifehistory <- sens.lifehistory %>% 
+  tidyr::pivot_wider(names_from = var_name, values_from = value) %>% 
+  tidyr::unnest(cols = c(maxima_edad, edad_madurez,fecundidad_media_huevos,especificidad_habitat,intervalo_temperatura,intervalo_salinidad,intervalo_profundidad,especificidad_presa,periodo_repro,ciclo_repro,dispersion_temprana,edad_temprana,sensibilidad_pH,   mobilidad_adulto))
+
+#add species names
+scaledlf <- coopsspecies %>%
+  dplyr::distinct(nom_coop, cooperativa, entidad, municipio, localidad, CVE_LOC, species, nombre_comun) %>% 
+  dplyr::left_join(scaled.sens.lifehistory, by=c("species")) 
+
+#add as dataset to package
+usethis::use_data(scaledlf, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(scaledlf)
+cat(data.description, file=here::here("R",paste0("data-","scaledlf.R")))
+
+readr::write_csv(scaledlf, here::here("outputs","scaled_lifehistory.csv"))
+
+
+#measures of biotic velocity
+#modified so that high value of sensitivity is negative
+
+#change directionality so that higher values are negative
+sens.dist <- readr::read_csv(here::here("outputs","distribution_stats_table.csv"))  %>% 
+  dplyr::mutate_at(c("suitability", "rmsq", "godsoeESp", "schoenerD", "warrenI","cor","rankCor"), ~(1-.))
+
+print(sens.dist)
+#centroid velocity is how quickly the species shifts distribution (higher value negative)
+#suitability (higher value positive)
+#correlation values are correlations with original distribution (higher value positive)
+#indices of niche overlap rmsd, godsoeESp, schoenerD, warren I, cor Rank cor measure higher values are positive, less change
+
+sens.data.long <- sens.dist %>% 
+  tidyr::pivot_longer(cols = centroid_velocity:ncol(.), names_to = "var_name", values_to = "value")
+
+sens.data.long.sp <- coopsspecies %>%
+  dplyr::select(-cooperativa, -nombre_cientifico, -esp_categoria) %>% 
+  dplyr::left_join(sens.data.long, by=c("species")) %>% 
+  dplyr::select(-arte_pesca)
+
+#combined sentivity based on life history and based on distribution for future scenarios
+
+rep.sc <- rep(c("ssp126","ssp245","ssp585"), each = 79)
+
+rep.lf.data <- dplyr::bind_rows(replicate(3, scaledlf, simplify = FALSE)) %>% 
+  dplyr::mutate(scenario = rep.sc) %>% 
+  dplyr::mutate(scenario = factor(scenario, levels=c("ssp126","ssp245","ssp585"))) %>% 
+  dplyr::select(CVE_LOC, entidad, municipio, localidad, species, scenario, everything()) %>%
+  tidyr::pivot_longer(cols = maxima_edad:ncol(.), names_to = "var_name", values_to = "value") %>% 
+  dplyr::select(-cooperativa)
+
+
+sens.sp.data <- rep.lf.data %>% 
+  dplyr::bind_rows(sens.data.long.sp) 
+#sens.sp.data[duplicated(sens.sp.data),]
+
+readr::write_csv(sens.sp.data, here::here("outputs","sensibilidad_especies.csv"))
+
+sensitivitysp <- sens.sp.data %>% 
+  dplyr::arrange(nom_coop)
+
+#add as dataset to package
+usethis::use_data(sensitivitysp, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(sensitivitysp)
+cat(data.description, file=here::here("R",paste0("data-","sensitivitysp.R")))
+
+
+sensibilidadsp.plot <- sensitivitysp %>%
+  dplyr::mutate(nombre_comun=dplyr::if_else(species=="lutjanus vivanus","pargo ojo amarillo", nombre_comun)) %>%
+  dplyr::group_by(scenario, nombre_comun) %>% 
+  dplyr::summarise(spsens = mean(value, na.rm = TRUE), .groups = "drop") %>%
+    ggplot2::ggplot(ggplot2::aes(x = nombre_comun, y = spsens)) +
+    ggplot2::geom_point(ggplot2::aes(color = scenario), alpha = 0.8)+
+  ggrepel::geom_label_repel(ggplot2::aes(x = nombre_comun, y = spsens, label = nombre_comun), box.padding   = 0.35, 
+                  point.padding = 0.5, min.segment.length = ggplot2::unit(0, 'lines'))+
+    ggplot2::scale_color_manual(values = RColorBrewer::brewer.pal(3, "Set2"), name = "Escenario") +
+    ggplot2::facet_wrap(.~scenario, ncol=3) +
+    ggplot2::labs(
+      title = "Peligro de las especies",
+      x = "Especie",
+      y = "Peligro"
+    ) +
+    ggplot2::theme_linedraw() +
+    ggplot2::theme(legend.position="right") +
+    ggplot2::theme(strip.text = ggplot2::element_text(size = 11)) +
+    ggplot2::theme(axis.text.x=ggplot2::element_blank())
+
+ggplot2::ggsave("peligro_sp.png", sensibilidadsp.plot, path = here::here("outputs","figures"), dpi=400, width= 8, height=6,scale =1)
+
+
+```
+
+PCA species sensitivity 
+```{r}
+data(sensitivitysp)
+
+#lifehistory and distribution
+
+scenario.list <- unique(sensitivitysp$scenario) 
+
+no.scenario <- 1:length(scenario.list)
+
+pca.sens <- lapply(no.scenario, pca_factor_sensitivity, sensitivitysp, scenario.list)
+
+sens.sp.pca <- dplyr::bind_rows(pca.sens)
+
+senssppca <- sens.sp.pca 
+
+#add as dataset to package
+usethis::use_data(senssppca, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(senssppca)
+cat(data.description, file=here::here("R",paste0("data-","senssppca.R")))
+
+
+
+```
+
+Estimate environmental sensitivity
+```{r get hazard}
+
+data("exposurehistorical")
+data("exposuressp126")
+data("exposuressp245")
+data("exposuressp585")
+data("localities")
+data("coops")
+     
+#exposure by communities
+
+googlesheets4::gs4_deauth()
+vars.expo <- googlesheets4::read_sheet("1eJXjwlHqEzSAZaTmE_XyN93fu6EI0I8igRH4AdvXOl8", sheet="vars_updated")
+
+fiplocal.id <- localities %>%
+    dplyr::distinct(CVE_LOC) %>% 
+    dplyr::pull(CVE_LOC)
+
+expohist.bc <- exposurehistorical %>% 
+  dplyr::filter(CVE_LOC %in% fiplocal.id) 
+
+
+scaled.expo.hist <- scale_var_expo(datatable=exposurehistorical, sspscenario="historical", vars.expo, fiplocal.id) %>% 
+  tidyr::pivot_longer(cols=3:ncol(.), names_to="indicator",values_to="value")
+  
+scaled.expo.ssp126 <- scale_var_expo(datatable=exposuressp126, sspscenario="ssp126", vars.expo, fiplocal.id)%>% 
+  tidyr::pivot_longer(cols=3:ncol(.), names_to="indicator",values_to="value")
+
+scaled.expo.ssp245 <- scale_var_expo(datatable=exposuressp245, sspscenario="ssp245", vars.expo, fiplocal.id)%>% 
+  tidyr::pivot_longer(cols=3:ncol(.), names_to="indicator",values_to="value")
+
+scaled.expo.ssp585 <- scale_var_expo(datatable=exposuressp585, sspscenario="ssp585", vars.expo, fiplocal.id)%>% 
+  tidyr::pivot_longer(cols=3:ncol(.), names_to="indicator",values_to="value")
+
+
+scaled.hazard <- dplyr::bind_rows(scaled.expo.hist, scaled.expo.ssp126, scaled.expo.ssp245, scaled.expo.ssp585) %>% 
+  dplyr::left_join(localities, by="CVE_LOC") %>% 
+  dplyr::mutate(component="hazard") %>% 
+  dplyr::select(scenario, CVE_LOC, indicator, value) %>% 
+  dplyr::filter(scenario!="historical")
+
+scaledenvsens <- coops %>% 
+  dplyr::left_join(scaled.hazard, by=c("CVE_LOC")) %>% 
+  dplyr::rename(var_name = indicator)
+
+#add as dataset to package
+usethis::use_data(scaledenvsens, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(scaledenvsens)
+cat(data.description, file=here::here("R",paste0("data-","scaledenvsens.R")))
+
+
+
+
+```
+
+PCA environmental sensitivity
+```{r}
+
+data(scaledenvsens)
+
+#lifehistory and distribution
+
+scenario.list <- unique(scaledenvsens$scenario) 
+
+no.scenario <- 1:length(scenario.list)
+
+pca.sens <- lapply(no.scenario, pca_factor_envsensitivity, scaledenvsens, scenario.list)
+
+sens.sp.pca <- dplyr::bind_rows(pca.sens)
+
+envsenspca <- sens.sp.pca 
+
+#add as dataset to package
+usethis::use_data(envsenspca, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(envsenspca)
+cat(data.description, file=here::here("R",paste0("data-","envsenspca.R")))
+
+```
+Combine sensitivity in species and environmental sensitivity to estimate hazard
+
+```{r}
+
+data("envsenspca")
+data("senssppca")
+
+
+sensibilidad.plot <- senssppca %>%
+    ggplot2::ggplot(ggplot2::aes(x = nom_coop, y = norm_pca_spsens)) +
+    ggplot2::geom_point(ggplot2::aes(color = scenario), alpha = 0.8)+
+    ggplot2::scale_color_manual(values = RColorBrewer::brewer.pal(3, "Set2"), name = "Escenario") +
+    ggplot2::facet_wrap(.~scenario, ncol=3) +
+    ggplot2::labs(
+      title = "Peligro de las especies por cooperativa",
+      x = "Cooperativa",
+      y = "Peligro"
+    ) +
+    ggplot2::theme_linedraw() +
+    ggplot2::theme(legend.position="right") +
+    ggplot2::theme(strip.text = ggplot2::element_text(size = 11)) +
+    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, vjust = 1, hjust=1))
+
+ggplot2::ggsave("peligro_sp.png", sensibilidad.plot, path = here::here("outputs","figures"), dpi=400, width= 8, height=6,scale =1)
+
+ensensibilidad.plot <- envsenspca %>%
+    ggplot2::ggplot(ggplot2::aes(x = nom_coop, y = norm_pca_envsens)) +
+    ggplot2::geom_point(ggplot2::aes(color = scenario), alpha = 0.8)+
+    ggplot2::scale_color_manual(values = RColorBrewer::brewer.pal(3, "Set2"), name = "Escenario") +
+    ggplot2::facet_wrap(.~scenario, ncol=3) +
+    ggplot2::labs(
+      title = "Peligro ambiental por cooperativa",
+      x = "Cooperativa",
+      y = "Peligro"
+    ) +
+    ggplot2::theme_linedraw() +
+    ggplot2::theme(legend.position="right") +
+    ggplot2::theme(strip.text = ggplot2::element_text(size = 11)) +
+    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, vjust = 1, hjust=1))
+
+ggplot2::ggsave("peligro_env.png", ensensibilidad.plot, path = here::here("outputs","figures"), dpi=400, width= 8, height=6,scale =1)
+
+comb.sens <- envsenspca %>% 
+  dplyr::left_join(senssppca, by=c("nom_coop","scenario")) %>% 
+  dplyr::select(-pc_val.x, -pc_val.y) %>%
+  dplyr::mutate(sum_norm_pca = norm_pca_envsens + norm_pca_spsens)
+
+sc.list <- unique(comb.sens$scenario)
+no.scenario <- 1:length(sc.list)
+
+pca.res <- list()
+
+for(eachscenario in no.scenario){
+  
+  this.scenario <- sc.list[eachscenario]
+
+  print(this.scenario)
+  maxs <- max(comb.sens$sum_norm_pca, na.rm = TRUE)
+  mins <- min(comb.sens$sum_norm_pca, na.rm = TRUE)
+
+  comb.sens.sc <- comb.sens %>% 
+    dplyr::filter(scenario == this.scenario) 
+  
+scaled.combpca <- scale(comb.sens.sc$sum_norm_pca, center = mins, scale = maxs - mins) %>% as.numeric()
+
+comb.sens.norm <- comb.sens.sc %>% 
+  dplyr::mutate(norm_pca = scaled.combpca) 
+  
+  pca.res[[this.scenario]] <- comb.sens.norm 
+  
+}
+
+
+pca.res.sens <- pca.res %>% dplyr::bind_rows()
+
+
+hazpca <- pca.res.sens %>% 
+  dplyr::select(nom_coop, scenario, norm_pca) %>% 
+  dplyr::rename(norm_pca_haz=norm_pca)
+
+#add as dataset to package
+usethis::use_data(hazpca, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(hazpca)
+cat(data.description, file=here::here("R",paste0("data-","hazpca.R")))
+
+```
+
+
+
+Estimate vulnerability, for its different components
+```{r get vulnerability}
+
+# coms.cost <- readr::read_csv(here::here("data-raw","comunidades_costeras_INEGI.csv"))
+#get data community vulnerability
+data("adaptivecapacitydata")
+data("localities")
+data("coops")
+
+fiplocal.id <- unique(localities$CVE_LOC)
+
+
+#variables utilizadas
+
+sheetlink="https://docs.google.com/spreadsheets/d/1AQO3R9WlJVnxlHYavAZ7MHgB_ej_oYRMI58k7OmfFww/"
+
+ind.vul<- googlesheets4::read_sheet(sheetlink, sheet = "indicadores") %>% 
+  dplyr::filter(component=="Vulnerabilidad") %>% 
+  dplyr::distinct(variable_id, direction)
+
+vul.ind.names <- ind.vul$variable_id
+
+adaptive.bc <- adaptivecapacitydata %>% 
+  dplyr::select(CVE_LOC, all_of(vul.ind.names)) %>%
+  dplyr::filter(CVE_LOC %in% fiplocal.id) %>% 
+  tidyr::pivot_longer(cols=2:(ncol(.)), names_to="variable_id",values_to="value") %>% 
+  dplyr::filter(!is.na(value)) #not usre why edu_capita is NA for two locations
+
+#test for lack of variation between variables
+
+adaptive.bc.var <- adaptive.bc %>% 
+  dplyr::group_by(variable_id) %>%
+  dplyr::summarise(range=max(value)-min(value))
+
+test.var  <-  adaptive.bc.var %>% 
+  dplyr::filter(range==0)  
+
+vul.vars <- adaptive.bc %>% 
+  dplyr::filter(!variable_id %in% test.var$variable_id) %>%
+  dplyr::mutate(value = dplyr::coalesce(value, 0)) %>% 
+  tidyr::pivot_wider(names_from = variable_id, values_from = value) 
+
+process.vul <- vul.vars %>%
+  dplyr::select(dplyr::where(is.numeric)) %>%
+  caret::preProcess(., method=c("range"))
+
+#correct directionality so that higher is negative
+
+vul.data.set.sc <- vul.vars %>% 
+  dplyr::select(dplyr::where(is.numeric)) %>%
+  stats::predict(process.vul, .) %>% 
+  dplyr::bind_cols(CVE_LOC=vul.vars$CVE_LOC, .) %>% 
+  tidyr::pivot_longer(cols=2:ncol(.), names_to="variable_id",values_to="value") %>% 
+  dplyr::left_join(ind.vul, by="variable_id") %>% 
+  dplyr::mutate(value = ifelse(direction == "higher_positive", 1 - value, value)) %>% 
+  dplyr::select(-direction)
+
+scaled.vul.sc <- vul.data.set.sc %>% 
+ tidyr::pivot_wider(names_from = variable_id, values_from = value)
+
+
+#get data for cooperatives
+
+googlesheets4::gs4_deauth()
+ind.coop <- googlesheets4::read_sheet(sheetlink, sheet = "indicadores_cooperativa", col_types = c("ccccd")) 
+
+ind.catego <- googlesheets4::read_sheet(sheetlink, sheet = "catego_ind_coop", col_types = c("cccc")) 
+
+#test for lack of variation between variables
+
+adaptive.bc.var <- ind.coop %>% 
+  dplyr::group_by(nom_abrev) %>%
+  dplyr::summarise(range=max(valor)-min(valor))
+
+test.var  <-  adaptive.bc.var %>% 
+  dplyr::filter(range==0)  
+
+ind.coop.wide <- ind.coop %>% 
+  dplyr::filter(!nom_abrev %in% test.var$nom_abrev) %>%
+  dplyr::mutate(valor = dplyr::coalesce(valor, 0)) %>% 
+  dplyr::select(-indicador_categoria, -indicador) %>% 
+  tidyr::pivot_wider(names_from = nom_abrev, values_from = valor) 
+
+process.coop <- ind.coop.wide %>% 
+  dplyr::select(dplyr::where(is.numeric)) %>%
+  caret::preProcess(., method=c("range"))
+
+vul.data.set.coop <- ind.coop.wide %>% 
+  dplyr::select(dplyr::where(is.numeric)) %>%
+  stats::predict(process.coop, .) %>% 
+  dplyr::bind_cols(cooperativa=ind.coop.wide$cooperativa, .) %>% 
+  tidyr::pivot_longer(cols=2:ncol(.), names_to="indicador",values_to="value") %>%
+  dplyr::left_join(ind.catego, by="indicador") %>%
+  dplyr::mutate(value = ifelse(direction == "higher_positive", 1 - value, value)) %>% 
+  dplyr::select(-indicador_categoria, -componente, -direction) %>% 
+  dplyr::rename(variable_id = indicador)
+
+scaled.vul.coop <- vul.data.set.coop %>% 
+ tidyr::pivot_wider(names_from = variable_id, values_from = value) %>% 
+dplyr::rename(nom_coop = cooperativa)
+  
+vulcoops <- coops %>% 
+  dplyr::left_join(scaled.vul.sc, by=c("CVE_LOC")) %>%
+  dplyr::left_join(scaled.vul.coop, by=c("nom_coop"))
+
+#add as dataset to package
+usethis::use_data(vulcoops, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(vulcoops)
+cat(data.description, file=here::here("R",paste0("data-","vulcoops.R")))
+
+
+
+```
+
+
+PCA vulnerability
+
+```{r}
+
+vars.delete <- c("deg_access","no_organizaciones","gobernanza", "agua", "alcant_alam", "combustible", "servicios", "telefono", "ss_indirecto","men_18a","edu_pcapita") #eliminated because correleations were NA
+
+vul.data <- vulcoops %>%
+  tidyr::pivot_longer(cols=pav_dis:ncol(.), names_to="variable_id",values_to="value") %>%
+  dplyr::filter(!variable_id %in% vars.delete) %>% 
+  tidyr::pivot_wider(names_from = variable_id, values_from = value) 
+
+vulpca <- pca_factor_vul(vul.data)
+
+#add as dataset to package
+usethis::use_data(vulpca, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(vulpca)
+cat(data.description, file=here::here("R",paste0("data-","vulpca.R")))
+
+
+```
+
+
+Estimate exposure
+
+```{r Exposure}
+data("adaptivecapacitydata")
+data("sensitivitydata")
+data("localities")
+
+indicator.data <- adaptivecapacitydata %>% 
+  dplyr::left_join(sensitivitydata, by=c("CVE_LOC","CVE_MUN"))
+
+
+googlesheets4::gs4_deauth()
+
+sheetlink="https://docs.google.com/spreadsheets/d/1AQO3R9WlJVnxlHYavAZ7MHgB_ej_oYRMI58k7OmfFww/"
+
+caracs.cooppesq <- googlesheets4::read_sheet(sheetlink, sheet = "Indicadores_pesquerias")
+
+ind.expo <- googlesheets4::read_sheet(sheetlink, sheet = "indicadores") %>% 
+  dplyr::filter(component=="Exposicion") %>% 
+  dplyr::distinct(variable_id, direction)
+
+caracs.pesq <- googlesheets4::read_sheet(sheetlink, sheet = "catego_ind_pesq") %>% 
+  dplyr::rename(variable_id = nom_abrev) %>%
+dplyr::distinct(variable_id, direction) %>% 
+  dplyr::bind_rows(ind.expo)
+#fisheries structure
+expo.ind.names <- ind.expo$variable_id
+
+exposure.bc <- indicator.data %>% 
+  dplyr::select(CVE_LOC, all_of(expo.ind.names)) %>%
+  dplyr::filter(CVE_LOC %in% fiplocal.id) %>% 
+  dplyr::mutate_if(is.numeric, ~(ifelse(is.na(.), 0, .))) %>% 
+  tidyr::pivot_longer(cols=2:(ncol(.)), names_to="var_nom",values_to="value")
+
+#test for lack of variation between variables
+adaptive.bc.var <- exposure.bc %>%
+  dplyr::group_by(var_nom) %>%
+  dplyr::summarise(range=max(value)-min(value))
+
+test.var  <-  adaptive.bc.var %>% 
+  dplyr::filter(range==0)  
+
+#remove variables with no variation
+ind.coop.wide <- exposure.bc %>% 
+  dplyr::filter(!var_nom %in% test.var$var_nom) %>%
+  dplyr::mutate(value = dplyr::coalesce(value, 0)) %>% 
+  tidyr::pivot_wider(names_from = var_nom, values_from = value) 
+
+
+pesq.coop.wide <- caracs.cooppesq %>%
+  dplyr::select(cooperativa, nom_abrev, valor) %>%
+  tidyr::pivot_wider(names_from = nom_abrev, values_from = valor) %>% 
+  dplyr::rename(nom_coop=cooperativa)
+
+#combine exposure data
+
+coop.pesq.exp <- coops %>% 
+  dplyr::left_join(ind.coop.wide, by=c("CVE_LOC")) %>% 
+  dplyr::left_join(pesq.coop.wide, by=c("nom_coop"))  
+
+rem.var <- c("prop_uefish","no_eff","no_str","eff_perc","str_perc") #variables that were 0
+
+coop.pesq.exp.corr <- coop.pesq.exp %>% 
+  tidyr::pivot_longer(cols=GRAPROES:ncol(.), names_to="indicador",values_to="value") %>%
+  dplyr::filter(!indicador %in% rem.var) %>% 
+  tidyr::pivot_wider(names_from = indicador, values_from = value)
+
+
+####
+process.coop <- coop.pesq.exp.corr %>% 
+  dplyr::select(dplyr::where(is.numeric)) %>%
+  caret::preProcess(., method=c("range"))
+
+expo.data.set.coop <- coop.pesq.exp.corr %>% 
+  dplyr::select(dplyr::where(is.numeric)) %>%
+  stats::predict(process.coop, .) %>% 
+  dplyr::bind_cols(nom_coop=coop.pesq.exp.corr[,1:6]) %>% 
+  dplyr::select(nom_coop, cooperativa, entidad, municipio, localidad, CVE_LOC, dplyr::everything()) %>% 
+  tidyr::pivot_longer(cols=GRAPROES:ncol(.), names_to="variable_id",values_to="value") %>%
+  dplyr::left_join(caracs.pesq, by="variable_id") %>%
+  dplyr::mutate(value = ifelse(direction == "higher_positive", 1 - value, value)) %>% 
+  dplyr::select(-direction) 
+
+scaled.expo.coop <- expo.data.set.coop %>% 
+ tidyr::pivot_wider(names_from = variable_id, values_from = value) 
+
+
+expocoops <- scaled.expo.coop
+#add as dataset to package
+usethis::use_data(expocoops, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(expocoops)
+cat(data.description, file=here::here("R",paste0("data-","expocoops.R")))
+
+```
+
+
+PCA exposure
+
+```{r}
+
+
+expo.coop.data <- expocoops %>% 
+  dplyr::select(-cooperativa, -entidad, -municipio, -localidad, -CVE_LOC)
+
+expopca <- pca_factor_expo(expo.coop.data)
+
+#add as dataset to package
+usethis::use_data(expopca, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(expopca)
+cat(data.description, file=here::here("R",paste0("data-","expopca.R")))
+
+
+```
+
+
+
+
+
+Plot vulnerability, hazard and exposure
+
+```{r}
+
+data("vulpca")
+data("expopca")
+data("hazpca")
+
+sc.list <- unique(hazpca$scenario)
+
+no.scenario <- 1:length(sc.list)
+
+risk.list <- list()
+
+risk.data <- lapply(no.scenario, risk_calc, hazpca, vulpca, expopca,coops, sc.list)
+ 
+risk.data.coop <- dplyr::bind_rows(risk.data)
+  
+riesgo.plot <- hazpca %>%
+    ggplot2::ggplot(ggplot2::aes(x = nom_coop, y = norm_pca_haz)) +
+    ggplot2::geom_point(ggplot2::aes(color = scenario), alpha = 0.8)+
+    ggplot2::scale_color_manual(values = RColorBrewer::brewer.pal(3, "Set2"), name = "Escenario") +
+    ggplot2::facet_wrap(.~scenario, ncol=3) +
+    ggplot2::labs(
+      title = "Peligro ambiental y a las especies por cooperativa",
+      x = "Cooperativa",
+      y = "Peligro"
+    ) +
+    ggplot2::theme_linedraw() +
+    ggplot2::theme(legend.position="right") +
+    ggplot2::theme(strip.text = ggplot2::element_text(size = 11)) +
+    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, vjust = 1, hjust=1))
+
+ggplot2::ggsave("peligro.png", riesgo.plot, path = here::here("outputs","figures"), dpi=400, width= 8, height=6,scale =1)
+  
+  comp.plot <- risk.data.coop %>%
+    dplyr::filter(scenario=="ssp585") %>% 
+    dplyr::mutate(entidad = as.factor(entidad)) %>% 
+    ggplot2::ggplot(ggplot2::aes(x = nom_coop, y = tot_risk)) +
+    ggplot2::geom_point(ggplot2::aes(color = entidad), alpha = 0.8)+
+    ggplot2::scale_color_manual(values = RColorBrewer::brewer.pal(3, "Set2"), name = "Entidad") +
+    #ggplot2::facet_wrap(.~scenario, ncol=3) +
+    ggplot2::labs(
+      title = "Riesgo ante el cambio climático por cooperativa",
+      x = "Cooperativa",
+      y = "Riesgo"
+    ) +
+    ggplot2::theme_linedraw() +
+    ggplot2::theme(legend.position="right") +
+    ggplot2::theme(strip.text = ggplot2::element_text(
+      size = 11)) +
+    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, vjust = 1, hjust=1))
+  
+ggplot2::ggsave("componentes_riesgo.png", comp.plot, path = here::here("outputs","figures"), dpi=400, width= 8, height=6,scale =1)
+
+
+```

@@ -39,11 +39,36 @@ scale_var_expo <- function(datatable, sspscenario, vars.expo, fiplocal.id){
     tidyr::pivot_longer(cols=3:ncol(.), names_to="variable_id",values_to="value") 
   print(data.long)
   
+  var.names <- unique(data.long$variable_id)
+  
+  if("Average_Chlorophyll" %in% var.names){
+    
+    data.long <- data.long %>% 
+      dplyr::filter(!variable_id %in% c("Average_Chlorophyll"))
+    
+  }
+  
+ 
+  if("Average_Phytoplankton" %in% var.names){
+    
+    data.long <- data.long %>% 
+      dplyr::filter(!variable_id %in% c("Average_Phytoplankton"))
+    
+  }
+  
+  if("tot_score" %in% var.names){
+    
+    data.long <- data.long %>% 
+      dplyr::filter(!variable_id %in% c("tot_score"))
+    
+  }
+  
   vars.set <- vars.expo %>% 
     dplyr::filter(scenario==sspscenario) %>% 
     dplyr::mutate(variable_id = var_nom) %>% 
     dplyr::select(variable_id, direction, scenario) 
-  
+
+  #higher value is negative  
   expo.dat <- data.long %>% 
     dplyr::left_join(vars.set, by="variable_id") %>% 
     dplyr::mutate(in_value=ifelse(direction=="higher_positive", 1-value, value)) %>%

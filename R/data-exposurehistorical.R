@@ -1,6 +1,6 @@
 #' @title DATASET_TITLE
 #' @description DATASET_DESCRIPTION
-#' @format A data frame with 2219 rows and 42 variables:
+#' @format A data frame with 2219 rows and 49 variables:
 #' \describe{
 #'   \item{\code{CVE_MUN}}{character COLUMN_DESCRIPTION}
 #'   \item{\code{CVE_LOC}}{character COLUMN_DESCRIPTION}
@@ -43,7 +43,14 @@
 #'   \item{\code{Minimum_SeaWaterSpeed}}{double COLUMN_DESCRIPTION}
 #'   \item{\code{Minimum_Silicate}}{double COLUMN_DESCRIPTION}
 #'   \item{\code{Minimum_TotalPhytoplankton}}{double COLUMN_DESCRIPTION}
-#'   \item{\code{red_tides}}{double COLUMN_DESCRIPTION} 
+#'   \item{\code{red_tides}}{double COLUMN_DESCRIPTION}
+#'   \item{\code{worldclim_historical_ann_precip_1970-2000}}{double COLUMN_DESCRIPTION}
+#'   \item{\code{worldclim_historical_annual_mean_temp_1970-2000}}{double COLUMN_DESCRIPTION}
+#'   \item{\code{worldclim_historical_max_temp_1970-2000}}{double COLUMN_DESCRIPTION}
+#'   \item{\code{worldclim_historical_mean_diurnal_range_1970-2000}}{double COLUMN_DESCRIPTION}
+#'   \item{\code{worldclim_historical_min_temp_cold_month_1970-2000}}{double COLUMN_DESCRIPTION}
+#'   \item{\code{worldclim_historical_precip_driest_month_1970-2000}}{double COLUMN_DESCRIPTION}
+#'   \item{\code{worldclim_historical_precip_wettest_month_1970-2000}}{double COLUMN_DESCRIPTION} 
 #'}
 #' @details DETAILS
 "exposurehistorical"

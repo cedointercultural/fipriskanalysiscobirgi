@@ -5,7 +5,7 @@
 \alias{exposuressp245}
 \title{DATASET_TITLE}
 \format{
-A data frame with 2219 rows and 33 variables:
+A data frame with 2219 rows and 40 variables:
 \describe{
 \item{\code{CVE_MUN}}{character COLUMN_DESCRIPTION}
 \item{\code{CVE_LOC}}{character COLUMN_DESCRIPTION}
@@ -40,6 +40,13 @@ A data frame with 2219 rows and 33 variables:
 \item{\code{Minimum_SeaWaterSpeed}}{double COLUMN_DESCRIPTION}
 \item{\code{Minimum_Silicate}}{double COLUMN_DESCRIPTION}
 \item{\code{Minimum_TotalPhytoplankton}}{double COLUMN_DESCRIPTION}
+\item{\code{worldclim_ssp245_ann_precip_2041-2060}}{double COLUMN_DESCRIPTION}
+\item{\code{worldclim_ssp245_annual_mean_temp_2041-2060}}{double COLUMN_DESCRIPTION}
+\item{\code{worldclim_ssp245_max_temp_warm_month_2041-2060}}{double COLUMN_DESCRIPTION}
+\item{\code{worldclim_ssp245_mean_diurnal_range_2041-2060}}{double COLUMN_DESCRIPTION}
+\item{\code{worldclim_ssp245_min_temp_cold_month_2041-2060}}{double COLUMN_DESCRIPTION}
+\item{\code{worldclim_ssp245_precip_driest_month_2041-2060}}{double COLUMN_DESCRIPTION}
+\item{\code{worldclim_ssp245_precip_wettest_month_2041-2060}}{double COLUMN_DESCRIPTION}
 }
 }
 \usage{

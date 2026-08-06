@@ -1,6 +1,6 @@
 #' @title DATASET_TITLE
 #' @description DATASET_DESCRIPTION
-#' @format A data frame with 5 rows and 9 variables:
+#' @format A data frame with 7 rows and 9 variables:
 #' \describe{
 #'   \item{\code{CVE_ENT}}{character COLUMN_DESCRIPTION}
 #'   \item{\code{CVE_LOC}}{character COLUMN_DESCRIPTION}

@@ -5,19 +5,15 @@
 \alias{lifehistorytraits}
 \title{DATASET_TITLE}
 \format{
-A data frame with 31 rows and 11 variables:
+A data frame with 182 rows and 7 variables:
 \describe{
+\item{\code{species}}{character COLUMN_DESCRIPTION}
+\item{\code{traits}}{character COLUMN_DESCRIPTION}
+\item{\code{value}}{character COLUMN_DESCRIPTION}
 \item{\code{Type}}{character COLUMN_DESCRIPTION}
-\item{\code{col_name}}{character COLUMN_DESCRIPTION}
-\item{\code{quant_index}}{double COLUMN_DESCRIPTION}
-\item{\code{ideal_directionality}}{character COLUMN_DESCRIPTION}
-\item{\code{topsis_weight}}{double COLUMN_DESCRIPTION}
-\item{\code{Trait}}{character COLUMN_DESCRIPTION}
-\item{\code{Definition}}{character COLUMN_DESCRIPTION}
-\item{\code{Low}}{list COLUMN_DESCRIPTION}
-\item{\code{Moderate}}{list COLUMN_DESCRIPTION}
-\item{\code{High}}{list COLUMN_DESCRIPTION}
-\item{\code{Very high}}{list COLUMN_DESCRIPTION}
+\item{\code{topsis_weight}}{integer COLUMN_DESCRIPTION}
+\item{\code{category}}{character COLUMN_DESCRIPTION}
+\item{\code{score}}{double COLUMN_DESCRIPTION}
 }
 }
 \usage{

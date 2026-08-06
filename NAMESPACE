@@ -2,6 +2,7 @@
 
 export("%>%")
 export(calc_distchange)
+export(calc_topsis)
 export(correctcomid)
 export(get_lifehistory)
 export(read_googlesheet)

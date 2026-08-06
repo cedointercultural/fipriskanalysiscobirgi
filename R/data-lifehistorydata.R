@@ -1,9 +1,9 @@
 #' @title DATASET_TITLE
 #' @description DATASET_DESCRIPTION
-#' @format A data frame with 43 rows and 41 variables:
+#' @format A data frame with 13 rows and 41 variables:
 #' \describe{
-#'   \item{\code{nombre_comun}}{character COLUMN_DESCRIPTION}
-#'   \item{\code{nombre_cientifico}}{character COLUMN_DESCRIPTION}
+#'   \item{\code{Especies}}{character COLUMN_DESCRIPTION}
+#'   \item{\code{common_name}}{character COLUMN_DESCRIPTION}
 #'   \item{\code{maximum_age_yrs}}{character COLUMN_DESCRIPTION}
 #'   \item{\code{age_at_maturity}}{character COLUMN_DESCRIPTION}
 #'   \item{\code{fecundity_mean_eggs}}{character COLUMN_DESCRIPTION}

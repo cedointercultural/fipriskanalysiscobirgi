@@ -17,6 +17,7 @@ Imports:
     dplyr,
     exactextractr,
     googlesheets4,
+    ggbiplot,
     ggforce,
     here,
     magrittr,
@@ -37,5 +38,4 @@ Imports:
     ggimage,
     grid
 Remotes:
-    valentinitnelav/geobuffer
     adamlilith/enmSdmX

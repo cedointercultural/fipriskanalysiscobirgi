@@ -7,17 +7,11 @@
 #' @export
 #'
 #' @examples
-get_lifehistory <- function(lifehistorydata, localities, lifehistorytraits, species.sm){
+get_lifehistory <- function(lifehistorydata, localities, lifehistorytraits, fishery.species){
 
-  fishery.species <- species.sm %>% 
-    dplyr::rename(species = nombre_cientifico) %>% 
-  dplyr::select(species, status)
   
-  fiplocal.bc <- localities %>%
-    dplyr::select(CVE_ENT, CVE_LOC, CVE_MUN) 
-  
-  fiplocal.bc.id <- fiplocal.bc %>%
-    dplyr::distinct(CVE_LOC)
+  fiplocal.bc.id <- localities %>%
+    dplyr::select(CVE_LOC) 
   
    lf.traits <- lifehistorytraits %>%
     dplyr::select(-Trait,-Definition) %>%
@@ -31,7 +25,7 @@ get_lifehistory <- function(lifehistorydata, localities, lifehistorytraits, spec
     dplyr::select(-quant_index, -ideal_directionality)
 
   lf.data <- lifehistorydata %>% 
-    dplyr::rename(species = nombre_cientifico)
+    dplyr::rename(species = Especies)
     
   col.traits <- lf.traits %>%
     dplyr::distinct(traits) %>%
@@ -40,8 +34,8 @@ get_lifehistory <- function(lifehistorydata, localities, lifehistorytraits, spec
   lifehistory.bc <- fishery.species %>%
     dplyr::left_join(lf.data, by=c("species")) %>%
     dplyr::filter(!is.na(nombre_comun)) %>%
-    dplyr::select(species, status, all_of(col.traits)) %>%
-    tidyr::pivot_longer(cols=3:ncol(.),names_to = "traits") %>%
+    dplyr::select(species, all_of(col.traits)) %>%
+    tidyr::pivot_longer(cols=2:ncol(.),names_to = "traits") %>%
     dplyr::left_join(lf.traits, by=c("traits","value"))  
 
 

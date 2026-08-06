@@ -21,7 +21,7 @@ calc_distchange <- function(eachspecies, sdm.species, crs.eqap, sdm.names, sdm.f
   print(this.species)
   sp.name <- gsub(" ","_",this.species)
     
-  test.names <- grepl(paste0(present.name,".*",sp.name, ".*","avg", collapse="|"), sdm.names) 
+  test.names <- grepl(paste0(sp.name, "_avg.asc", collapse="|"), sdm.names) 
   
   index.test <- which(test.names, arr.ind = FALSE, useNames = TRUE)
   
@@ -43,11 +43,12 @@ calc_distchange <- function(eachspecies, sdm.species, crs.eqap, sdm.names, sdm.f
     eachfuturesc <- sdm.scenarios[eachsc]
     print(eachfuturesc)
     
-    future.names <- grepl(paste0(eachfuturesc,".*",sp.name), sdm.names)
+    future.names <- grepl(paste0(sp.name,"_",eachfuturesc,".*"), sdm.names)
     
     index.future <- which(future.names, arr.ind = FALSE, useNames = TRUE)
     
     name.sc <- sdm.files[index.future]
+    
     print(name.sc)
     if(length(name.sc)>1) print(paste0("Mas de un raster futuro ", sp.name))
     
@@ -93,7 +94,7 @@ calc_distchange <- function(eachspecies, sdm.species, crs.eqap, sdm.names, sdm.f
     dist.list[[eachsc]] <- dist.change  
   }
     
-  dist.res <- bind_rows(dist.list)
+  dist.res <- dplyr::bind_rows(dist.list)
   
   return(dist.res)
 

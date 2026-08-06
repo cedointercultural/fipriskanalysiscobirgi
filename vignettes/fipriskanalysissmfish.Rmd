@@ -80,8 +80,6 @@ readr::write_csv(list_res.table, here::here("outputs","distribution_stats_table.
 
 
 
-=
-
 Get data for components 
 ```{r get fip data, message=FALSE, warning=FALSE, include=FALSE}
 
@@ -498,6 +496,7 @@ Estimate species sensitivity
 
 ```{r species sensitivity}
 
+data(speciescoop)
 
 lifehistory.trait <- readr::read_csv(here::here("outputs","lifehistory_data.csv")) %>% 
   dplyr::select(-value, -Type, -category, -status, -topsis_weight) %>% 
@@ -507,11 +506,35 @@ lifehistory <- lifehistory.trait %>%
   dplyr::select(-species) %>% 
   names()
   
-scaled.lifehistory <- scale_var(datatable=lifehistory.trait, sspscenario=NA)
+scaled.lifehistory <- scale_var(datatable=lifehistory.trait, sspscenario=NA) %>% 
+  dplyr::mutate(species=tolower(species)) %>% 
+  dplyr::select(-tot_score)
 
-readr::write_csv(scaled.lifehistory, here::here("outputs","sensibilidad_historiavida.csv"))
+gs4_deauth()
+#fix directionality of life history attributes, some were eliminated because it was unclear they could affect response to climate change
+vars.lf <- googlesheets4::read_sheet("1bBn7nLtMHPUSuSWU1XI85AR53cUfr9rSjv_6Dp4OywI", sheet="life_history_direction")
+
+sens.lifehistory <- scaled.lifehistory %>% 
+  tidyr::pivot_longer(cols = 2:ncol(.), names_to = "var_name", values_to = "value") %>% 
+  dplyr::left_join(vars.lf, by="var_name") %>% 
+  dplyr::filter(!is.na(direction)) %>% 
+  dplyr::mutate(value = dplyr::if_else(direction == "higher_positive", 1 - value, value)) %>% 
+  dplyr::select(-direction, -var_name) %>% 
+  dplyr::rename(var_name = var_name_sp) %>% 
+  tidyr::pivot_wider(names_from = var_name, values_from = value)
+
+sp.coop.nom <- speciescoop %>% 
+  dplyr::rename(species = nombre_cientifico)
+
+sens.coop.lf <- sp.coop.nom %>%
+  dplyr::left_join(sens.lifehistory, by="species") 
+
+
+#readr::write_csv(scaled.lifehistory, here::here("outputs","sensibilidad_historiavida.csv"))
 
 readr::write_csv(scaled.lifehistory, here::here("outputs","scaled_lifehistory.csv"))
+
+
 
 ```
 
@@ -563,7 +586,8 @@ readr::write_csv(scaled.hazard, here::here("outputs","scaled_hazard.csv"))
 
 ```
 
-plot sensitivity 
+
+Aggregate species hazard 
 ```{r}
 data("speciescoop")
 
@@ -571,37 +595,10 @@ data("speciescoop")
 
 sens.lifehistory <- readr::read_csv(here::here("outputs","scaled_lifehistory.csv")) %>% 
   dplyr::mutate(species = tolower(species))
+
 print(sens.lifehistory)
 
-sp.coop.nom <- speciescoop %>% 
-  dplyr::rename(species = nombre_cientifico)
 
-sens.coop.lf <- sp.coop.nom %>%
-  dplyr::left_join(sens.lifehistory, by="species") %>% 
-  dplyr::filter(!is.na(tot_score)) %>% 
-  dplyr::select(-nom_coop, -arte_pesca, -fecha_fip, -lider_fip, -nombre_fip, -region)
-
-gs4_deauth()
-#fix directionality of life history attributes, some were eliminated because it was unclear they could affect response to climate change
-vars.lf <- googlesheets4::read_sheet("1bBn7nLtMHPUSuSWU1XI85AR53cUfr9rSjv_6Dp4OywI", sheet="life_history_direction")
-
-names(sens.lifehistory)
-
-#check for missing species
-#sens.coop.lf %>% dplyr::filter(is.na(tot_score)) %>% View()
-  
-sens.lifehistory.long <- sens.coop.lf %>% 
-  tidyr::pivot_longer(cols = 14:ncol(.), names_to = "var_name", values_to = "value") %>% 
-  dplyr::left_join(vars.lf, by="var_name") %>% 
-  dplyr::filter(!is.na(direction)) %>% 
-  dplyr::mutate(value = dplyr::if_else(direction == "higher_positive", 1 - value, value)) %>% 
-  dplyr::select(-direction, -var_name) %>% 
-  dplyr::rename(var_name = var_name_sp)
-
-print(sens.lifehistory.long)
-
-sens.lifehistory.natest <- sens.lifehistory.long %>% 
-  dplyr::filter(is.na(value))
 
 sens.lf.long.mean <- sens.lifehistory.long %>% 
   dplyr::group_by(cooperativa, coop_name, localidad, habitat_group, status, entidad, species) %>% 
@@ -627,18 +624,19 @@ sens.lf.plot <- sens.lf.long.mean %>%
     x = "Grupo",
     y = "Valor del indicador") +
 #  ggplot2::theme(legend.position="none")+
-  ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, vjust = 1, hjust=1, size = 11))+
   ggplot2::theme(strip.text = ggplot2::element_text(
     size = 11))+
   ggplot2::ylim(0,1) +
   ggplot2::theme(legend.position="bottom")+
-  ggplot2::theme_linedraw() 
+  ggplot2::theme_linedraw() +
+    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, vjust = 1, hjust=1, size = 11))
+
 
 sens.lf.plot
 
 
 
-ggplot2::ggsave("sensibilidad_historia_vida.png", sens.lf.plot, path = here::here("outputs","figures"), dpi=400, width= 14, height=14,scale =1)
+ggplot2::ggsave("sensibilidad_historia_vida.png", sens.lf.plot, path = here::here("outputs","figures"), dpi=400, width= 10, height=9,scale =1)
 
 
 
@@ -683,16 +681,17 @@ sens.dist.plot <- sens.data.long.mean %>%
     x = "Grupo",
     y = "Valor del indicador") +
 #  ggplot2::theme(legend.position="none")+
-  ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, vjust = 1, hjust=1, size = 11))+
   ggplot2::theme(strip.text = ggplot2::element_text(
     size = 11))+
   ggplot2::ylim(0,1) +
   ggplot2::theme(legend.position="bottom")+
-  ggplot2::theme_linedraw() 
+  ggplot2::theme_linedraw() +
+  ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, vjust = 1, hjust=1, size = 11))
+
 
 sens.dist.plot
 
-ggplot2::ggsave("sensibilidad_vel_biotica.png", sens.dist.plot, path = here::here("outputs","figures"), dpi=400, width= 12, height=14,scale =1)
+ggplot2::ggsave("sensibilidad_dist.png", sens.dist.plot, path = here::here("outputs","figures"), dpi=400, width= 10, height=9,scale =1)
 
 
 #joint two measures of sensitivity
@@ -701,9 +700,6 @@ sens.all.mean <- sens.lf.long.mean %>%
   dplyr::rename(mean_value_lf = mean_value) %>%
   dplyr::left_join(sens.data.long.mean, by=c("cooperativa","coop_name","species","localidad","entidad","habitat_group","status")) %>%
   dplyr::rename(mean_value_dist= mean_value)
-
-sens.all.mean %>% readr::write_csv(here::here("outputs","scaled_sensitivity.csv"))  
-
 
 sens.all.plot <- sens.all.mean %>% 
   dplyr::mutate(Estatus = dplyr::if_else(status=="fip","FIP", "Otros")) %>% 
@@ -736,7 +732,44 @@ sens.all.plot
 ggplot2::ggsave("sensibilidad_all.png", sens.all.plot, path = here::here("outputs","figures"), dpi=400, width= 12, height=14,scale =1)
 
 
+sens.data.long %>% 
+  dplyr::bind_rows(sens.lifehistory.long) %>% 
+  readr::write_csv(here::here("outputs","scaled_sensitivity.csv"))  
+
+
 ```
+
+
+```{r}
+
+
+sens.data <- readr::read_csv(here::here("outputs","scaled_sensitivity.csv"))  %>%
+  dplyr::mutate(componente = "sensitivity") %>% 
+  dplyr::select(componente, species, coop_name, scenario, var_name, value) 
+  
+  
+
+
+vul.sc.data <- readr::read_csv(here::here("outputs", "scaled_vulnerability.csv")) %>%
+  dplyr::mutate(componente = "vulnerability") %>% 
+  dplyr::mutate(scenario="historical")%>% 
+  dplyr::filter(indicator!="tot_score")
+
+expo.sc.data <- readr::read_csv(here::here("outputs", "scaled_exposure.csv"))  %>%
+  dplyr::mutate(componente = "exposure") %>% 
+  dplyr::mutate(scenario="historical")%>% 
+  dplyr::filter(indicator!="tot_score")
+  
+hazard.sc.data <-  readr::read_csv(here::here("outputs", "scaled_hazard.csv")) %>% 
+  dplyr::rename(componente = component) %>%
+  dplyr::filter(indicator!="tot_score") %>% 
+  dplyr::mutate(indicador_categoria="peligro") 
+  
+
+pesqueria.pca <- pca_factor(thisdata = sensitivity.bc, datasetname = "pesqueria", namesdata = pesqueria) 
+
+```
+
 
 Plot vulnerability, hazard and exposure
 
@@ -744,19 +777,11 @@ Plot vulnerability, hazard and exposure
 
 sens.data <- readr::read_csv(here::here("outputs","scaled_sensitivity.csv"))  
 
-sens.sc.data.dist <- sens.data %>%
-  dplyr::select(-mean_value_lf) %>%
-  dplyr::group_by(coop_name, esp_categoria, habitat_group) %>%
-  dplyr::summarise(mean_value=mean(mean_value_dist)) %>% 
-  dplyr::mutate(componente="sensibilidad hv")
- 
 sens.sc.data <- sens.data %>%
-  dplyr::select(-mean_value_dist) %>%
-  dplyr::group_by(coop_name, esp_categoria, habitat_group) %>%
-  dplyr::summarise(mean_value=mean(mean_value_lf)) %>% 
-  dplyr::mutate(componente="sensibilidad dist")  %>% 
-  dplyr::bind_rows(sens.sc.data.dist) %>% 
-  dplyr::rename(cooperativa=coop_name, indicador_categoria = esp_categoria, indicator=habitat_group) %>% 
+  dplyr::mutate(componente="peligro") %>% 
+   dplyr::group_by(componente, coop_name, esp_categoria, var_name) %>%
+  dplyr::summarise(mean_value=mean(value)) %>% 
+  dplyr::rename(cooperativa=coop_name, indicador_categoria = esp_categoria, indicator=var_name) %>% 
   dplyr::mutate(scenario="historical")
 
 vul.sc.data <-
@@ -820,8 +845,12 @@ risk.data %>% dplyr::distinct(eje)
       size = 11))
                      #   ggplot2::facet_wrap(.~FIP, ncol=2) 
                       
-ggplot2::ggsave("componentes_riesgo.png", comp.plot, path = here::here("outputs","figures"), dpi=400, width= 16, height=11,scale =1)
+  comp.plot
+ggplot2::ggsave("componentes_riesgo.png", comp.plot, path = here::here("outputs","figures"), dpi=400, width= 10, height=9,scale =1)
 
+
+
+risk.data %>% readr::write_csv(here::here("outputs","componentes_riesgo.csv"))
 
 ```
 
@@ -830,128 +859,56 @@ ggplot2::ggsave("componentes_riesgo.png", comp.plot, path = here::here("outputs"
 Plot risk
 ```{r plot risk}
 
+risk.data  <- readr::read_csv(here::here("outputs","componentes_riesgo.csv"))
 
-topsis.res <-
-  lapply(hazard.sc, calc_topsis, hazard.sc.data, vul.expo.dat, sp.cols) %>%
+risk.data.hist <- risk.data %>% 
+  dplyr::filter(scenario=="historical") %>% 
+  dplyr::filter(indicador_categoria!="peligro") %>%
+  dplyr::select(-componente, -indicador_categoria, -eje, -scenario) %>% 
+  group_by(cooperativa, indicator) %>%
+  dplyr::summarise(mean_value = mean(mean_value)) %>% #this summarises across species
+  tidyr::pivot_wider(names_from = indicator, values_from = mean_value) %>% 
+  ungroup()
+
+hazard.sc <- unique(risk.data$scenario)
+no.sc <- 1:length(hazard.sc)
+  
+topsis.res <- lapply(no.sc, calc_topsis, hazard.sc, risk.data, risk.data.hist) %>%
   dplyr::bind_rows() %>%
-  dplyr::mutate(escenario = dplyr::if_else(escenario == "historico", "histórico", escenario)) %>% left_join(fipinventory, by = c("fip_name")) %>% 
-  distinct(escenario, fip_name, fip_id_number, species, score) %>% 
-  left_join(specieslist, by="species") 
-
-topsis.res$taxa <- factor(topsis.res$taxa, levels = c("Bivalves","Crabs","Lobster","Shrimp","Sea urchin","Octopus","Reef fish","Demersal fish","Pelagic fish","Pelagic-oceanic fish"))
+  dplyr::mutate(escenario = dplyr::if_else(escenario == "historical", "histórico", escenario)) 
 
 sp.cols <-
-  c("#ffd480","#ffd11a" ,"#E69F00","#ff0000","#ff751a","#800000","#56B4E9","#0072B2","#751aff","#003399")
+  c("#ffd480","#0072B2","#800000","#003399")
              
 topsis.plot <- topsis.res %>%
-  dplyr::mutate(scenario=if_else(escenario=="histórico", "Historical", escenario)) %>% 
-  dplyr::filter(!is.na(taxa)) %>% 
-  dplyr::filter(scenario=="Historical") %>% 
-  dplyr::mutate(fip_id_number = as.factor(fip_id_number)) %>%
-  dplyr::arrange(taxa) %>% 
-  ggplot2::ggplot(ggplot2::aes(x = taxa, y = score, color = taxa)) +
+  ggplot2::ggplot(ggplot2::aes(x = escenario, y = score, color = escenario)) +
   ggplot2::geom_point(size = 2,
-                      alpha = 0.8) + # It's nice to add some transparency because there may be overlap.)
-             #         ggplot2::scale_color_manual(values = sp.cols, name = "fip_name") +
-                        ggplot2::labs(
-                          title = "Risk to fisheries due to climate change",
-                          subtitle = "Higher values indicate more risk",
-                          x = "FIP ID number",
-                          y = "Taxa"
-                        ) +
-                        ggplot2::theme_linedraw() +
-                        ggplot2::scale_shape(guide = "none") +
-                        ggplot2::scale_color_manual(values = sp.cols) +
-  theme(axis.text.x = element_text(angle = 45))
-                      #  ggplot2::theme(legend.position="none")
+                      alpha = 0.7) + # It's nice to add some transparency because there may be overlap.)
+  #         ggplot2::scale_color_manual(values = sp.cols, name = "fip_name") +
+  ggplot2::scale_color_manual(values = sp.cols, name = "Escenario") +
+  ggplot2::labs(
+    title = "Riesgo ante el cambio climático",
+    x = "Escenario",
+    y = "Riesgo"
+  ) +
+  ggplot2::theme_linedraw() +
+  ggplot2::theme(legend.position="none") +
+  ggplot2::theme(strip.text = ggplot2::element_text(
+    size = 11)) +
+   ggplot2::facet_wrap(.~cooperativa, ncol=2) 
                       
-                      # # https://stackoverflow.com/questions/60917778/how-do-i-plot-an-image-from-phylopic-in-top-right-corner-of-my-ggplot-graph-in-r
-                      # verdillo <-
-                      #   png::readPNG(
-                      #     RCurl::getURLContent(
-                      #       "https://images.phylopic.org/images/eb6f54bf-3182-4d3a-9f16-602759c76db0/raster/512x253.png"
-                      #     ),
-                      #     native = T
-                      #   )
-                      # verdillo.grob <- grid::rasterGrob(verdillo, interpolate = TRUE)
-                      # 
-                      # erizo <-
-                      #   png::readPNG(
-                      #     RCurl::getURLContent(
-                      #       "https://images.phylopic.org/images/0552ec39-a86b-4e23-b92a-7c1c38386e29/raster/1024x715.png"
-                      #     ),
-                      #     native = T
-                      #   )
-                      # erizo.grob <- grid::rasterGrob(erizo, interpolate = TRUE)
-                      # 
-                      # pulpo <-
-                      #   png::readPNG(
-                      #     RCurl::getURLContent(
-                      #       "https://images.phylopic.org/images/f060bcc7-5725-46f7-8276-14553af3707f/raster/1452x1536.png"
-                      #     ),
-                      #     native = T
-                      #   )
-                      # pulpo.grob <- grid::rasterGrob(pulpo, interpolate = TRUE)
-                      # 
-                      # langosta <-
-                      #   png::readPNG(
-                      #     RCurl::getURLContent(
-                      #       "https://images.phylopic.org/images/d96e18f2-c9d6-4b2e-914c-678ed3c72a28/raster/759x1024.png"
-                      #     ),
-                      #     native = T
-                      #   )
-                      # langosta.grob <- grid::rasterGrob(langosta, interpolate = TRUE)
-ggplot2::ggsave(
-  "riesgo_pesqueria.png",
-  topsis.plot,
-  path = here::here("outputs", "figures"),
-  dpi = 400,
-  width = 8,
-  height = 8,
-  scale = 1
-)                      # 
-                      
-topsis.plot.icons <- topsis.plot +
-                        ggplot2::annotation_custom(
-                          erizo.grob,
-                          xmin = 3.5,
-                          xmax = 4,
-                          ymin = 0.6,
-                          ymax = Inf
-                        ) +
-                        ggplot2::annotation_custom(
-                          langosta.grob,
-                          xmin = 3.5,
-                          xmax = 4,
-                          ymin = 0.52,
-                          ymax = Inf
-                        ) +
-                        ggplot2::annotation_custom(
-                          pulpo.grob,
-                          xmin = 3.5,
-                          xmax = 4,
-                          ymin = 0.35,
-                          ymax = Inf
-                        ) +
-                        ggplot2::annotation_custom(
-                          verdillo.grob,
-                          xmin = 3.5,
-                          xmax = 4,
-                          ymin = 0.05,
-                          ymax = Inf
-                        )
-                      
-                      
-ggplot2::ggsave(
-  "riesgo_pesqueria.png",
-  topsis.plot.icons,
-  path = here::here("outputs", "figures"),
-  dpi = 400,
-  width = 8,
-  height = 8,
-  scale = 1
-)
-                      
+ggplot2::ggsave("riesgo_cooperativa.png", topsis.plot, path = here::here("outputs","figures"), dpi=400, width= 10, height=8,scale =1)
+                   
+
+```
+
+```{r}
+risk.data  <- readr::read_csv(here::here("outputs","componentes_riesgo.csv"))
+
+risk.mean <- risk.data %>% 
+  dplyr::mutate(componente = dplyr::if_else(componente=="peligro", "hazard", componente)) %>%
+  dplyr::group_by(cooperativa, componente, scenario) %>%
+  dplyr::summarise(mean_score = mean(mean_value))
 
 ```
 

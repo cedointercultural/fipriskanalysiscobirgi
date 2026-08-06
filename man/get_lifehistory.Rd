@@ -4,7 +4,12 @@
 \alias{get_lifehistory}
 \title{Get lifehistory data}
 \usage{
-get_lifehistory(lifehistorydata, localities, lifehistorytraits, species.sm)
+get_lifehistory(
+  lifehistorydata,
+  localities,
+  lifehistorytraits,
+  fishery.species
+)
 }
 \arguments{
 \item{lifehistorydata}{life history characteristics}

@@ -1,6 +1,6 @@
 #' @title DATASET_TITLE
 #' @description DATASET_DESCRIPTION
-#' @format A data frame with 2219 rows and 34 variables:
+#' @format A data frame with 2219 rows and 41 variables:
 #' \describe{
 #'   \item{\code{CVE_MUN}}{character COLUMN_DESCRIPTION}
 #'   \item{\code{CVE_LOC}}{character COLUMN_DESCRIPTION}
@@ -35,7 +35,14 @@
 #'   \item{\code{Minimum_Salinity}}{double COLUMN_DESCRIPTION}
 #'   \item{\code{Minimum_SeaWaterDirection}}{double COLUMN_DESCRIPTION}
 #'   \item{\code{Minimum_SeaWaterSpeed}}{double COLUMN_DESCRIPTION}
-#'   \item{\code{Minimum_Silicate}}{double COLUMN_DESCRIPTION} 
+#'   \item{\code{Minimum_Silicate}}{double COLUMN_DESCRIPTION}
+#'   \item{\code{worldclim_ssp126_ann_precip_2041-2060}}{double COLUMN_DESCRIPTION}
+#'   \item{\code{worldclim_ssp126_annual_mean_temp_2041-2060}}{double COLUMN_DESCRIPTION}
+#'   \item{\code{worldclim_ssp126_max_temp_warm_month_2041-2060}}{double COLUMN_DESCRIPTION}
+#'   \item{\code{worldclim_ssp126_mean_diurnal_range_2041-2060}}{double COLUMN_DESCRIPTION}
+#'   \item{\code{worldclim_ssp126_min_temp_cold_month_2041-2060}}{double COLUMN_DESCRIPTION}
+#'   \item{\code{worldclim_ssp126_precip_driest_month_2041-2060}}{double COLUMN_DESCRIPTION}
+#'   \item{\code{worldclim_ssp126_precip_wettest_month_2041-2060}}{double COLUMN_DESCRIPTION} 
 #'}
 #' @details DETAILS
 "exposuressp126"
