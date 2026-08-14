@@ -6,9 +6,6 @@
 \usage{
 correctcomid(thiscomponentdata)
 }
-\arguments{
-\item{thiscomponentdata}{}
-}
 \description{
 Correct COM_ID field to CVE_LOC
 }

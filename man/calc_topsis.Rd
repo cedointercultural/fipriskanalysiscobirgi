@@ -6,9 +6,6 @@
 \usage{
 calc_topsis(eachno, hazard.sc, risk.data, risk.data.hist)
 }
-\arguments{
-\item{risk.data.hist}{}
-}
 \description{
 Topsis multicriteria
 }

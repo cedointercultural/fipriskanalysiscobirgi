@@ -1,0 +1,412 @@
+---
+title: "Georeference landing sites and plot catch for COBI 2026 FIP project"
+output: html_notebook
+---
+
+
+```{r load package, include=FALSE}
+#rebuild and load the package
+devtools::load_all() # restarts and loads
+
+# List of packages for session
+.packages = c("import")
+
+# Install CRAN packages (if not already installed)
+.inst <- .packages %in% installed.packages()
+if(length(.packages[!.inst]) > 0) install.packages(.packages[!.inst])
+
+# Load packages into session 
+lapply(.packages, require, character.only=TRUE)
+
+#use this for packages
+#specifies what functions to import
+# https://cran.r-project.org/web/packages/import/vignettes/import.html
+import::from(dplyr, mutate, distinct, select, group_by, summarise, keep_when = filter, rename)
+
+#to fix access with google
+#https://github.com/orgs/community/discussions/39210
+
+#to fix access issues
+#https://www.namehero.com/blog/solve-temporary-failure-in-name-resolution-error-in-linux/
+
+
+```
+
+Get catch from official record. 
+Filter out catch for artisanal fisheries and eliminate aquaculture production.
+Uses table with corrected names to standarize names of locations and fishery offices and correct incorrect state names.
+Combines catch files for all years and selects landing site, state, fishery office, species, weight, and catch value.
+Resulting data is imported as catch rmd into the package
+
+```{r get catch data, echo=TRUE}
+
+locs.pesca <- clean_locs_pesca()
+
+ents.coast.selecc <- toupper(c("Baja California Sur", "Baja California", "Sonora", "Sinaloa", "Nayarit", "Jalisco"))
+coast.selecc <- stringi::stri_trans_general(str = ents.coast.selecc, id = "Latin-ASCII")
+
+#Currently only using data 2018-2023, other data have too many inconsistencies
+#catch.files <- list.files(path = here::here("data-raw","original_fisheries_data"), full.names = TRUE)
+catch.files <- list.files(path = here::here("data-raw","original_fisheries_data"), full.names = TRUE, pattern = "2018|2019|2020|2021|2022|2023|2024|2025|2026")
+
+no.catchfiles <- 1:length(catch.files)
+
+#NOTE: There are 16,531 records between 2000-2004 with 0 price for catch
+
+#parallel::mclapply(no.catchfiles, get_catch, catch.files, coast.selecc, locs.pesca)
+#use lapply for debugging
+lapply(no.catchfiles, get_catch, catch.files, coast.selecc, locs.pesca)
+
+catch.files.clean <- list.files(path = here::here("data-raw","fisheries_data"), full.names = TRUE)
+no.catchfiles.clean <- 1:length(catch.files.clean)
+
+catchdata <- lapply(no.catchfiles.clean, clean_catch, catch.files.clean) %>% 
+  dplyr::bind_rows() %>% 
+  mutate(catch_id = paste0("catch_",1:nrow(.)))
+
+usethis::use_data(catchdata, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(catchdata)
+cat(data.description, file=here::here("R",paste0("data-","catchdata")))
+
+#rebuild and load the package
+devtools::load_all() # restarts and loads
+
+
+```
+
+
+Gets list of fishery offices from catch records
+Uses standarized catch data to get unique fishery offices and georeference them
+```{r Get fishery offices}
+
+locs.pesca <- clean_locs_pesca()
+
+#get unique georeferenced rnp codes
+
+data("inegigc")
+data("catchdata")
+
+fishery.offices.list <- get_fishery_office_catch(catchdata) 
+
+#fishery office list for 2024 is available here https://www.conapesca.gob.mx/work/sites/cona/dgppe/Subdelegaciones_de_Pesca.pdf
+#the La Reforma office is in the Municipality of Angostura and has CVE_LOC = 250020093
+#there are locations named La Reforma sites in Sinaloa so had to be extracted manually
+
+fishery.office.table <- fishery.offices.list %>% 
+ dplyr::left_join(inegigc) %>% 
+  dplyr::select(-POBTOT, -POBFEM,  -POBMAS)
+
+fishery.spatial <- sf::st_as_sf(fishery.office.table, coords = c("deci_lon", "deci_lat"), crs = 4326) %>% 
+  sf::st_transform(4269)
+
+fishery.spatial %>% 
+  sf::st_write(here::here("outputs","fishery_offices.shp"), append=FALSE)
+
+readr::write_csv(fishery.office.table, here::here("outputs","fishery_offices.csv"))
+
+world <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf")
+
+point_extent <- sf::st_bbox(fishery.spatial)
+
+ggplot2::ggplot() +
+   ggplot2::geom_sf(data = world, fill = "antiquewhite", color = "gray") + # Base layer
+  ggplot2::geom_sf(data = fishery.spatial, size = 2, color = "blue") +
+  ggplot2::coord_sf(xlim = c(point_extent["xmin"], point_extent["xmax"]), 
+           ylim = c(point_extent["ymin"], point_extent["ymax"]),
+           expand = TRUE) +   
+  ggplot2::theme_minimal()
+
+fisheryoffice <- fishery.office.table
+  
+usethis::use_data(fisheryoffice, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(fisheryoffice)
+cat(data.description, file=here::here("R",paste0("data-","fisheryoffice")))
+
+#rebuild and load the package
+devtools::load_all() # restarts and loads
+
+
+
+
+```
+
+Get locations from catch records
+```{r Get locations from catch, echo=TRUE}
+
+locs.pesca <- clean_locs_pesca()
+
+data("catchdata")
+
+data("inegigc")
+
+catch.locations.data <- get_locations_catch(catchdata) 
+
+readr::write_csv(catch.locations.data, here::here("outputs","catch_locations.csv"))
+
+catchlocations <- catch.locations.data %>% 
+  dplyr::bind_rows() 
+
+usethis::use_data(catchlocations, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(catchlocations)
+cat(data.description, file=here::here("R",paste0("data-","catchlocations")))
+
+#rebuild and load the package
+devtools::load_all() # restarts and loads
+
+
+```
+
+
+#Create table georeferrenced locations from INEGI & Google and add distance to nearest fishery office
+
+```{r location table, echo=TRUE}
+
+locs.pesca <- clean_locs_pesca()
+
+correct.ent <- locs.pesca %>%
+    select(-NOM_LOC_REV)
+
+correct.loc <- locs.pesca %>%
+    select(-NOM_ENT_REV) 
+
+ents.coast.selecc <- toupper(c("Baja California Sur", "Baja California", "Sonora", "Sinaloa", "Nayarit", "Jalisco"))
+coast.selecc <- stringi::stri_trans_general(str = ents.coast.selecc, id = "Latin-ASCII")
+
+#will extract all locations within states, not only coastal areas
+#only run once will create attached data
+#get_inegi(ents.coast.selecc)
+
+data("inegigc")
+
+locs.census <- inegigc %>% 
+   select(NOM_ENT, NOM_LOC, deci_lat, deci_lon)
+  
+#get georeferenced locations from inegi
+locs.inegi <- googlesheets4::read_sheet("1Nww_0aSf2yQv9YqK8LqmJmIM2wwpHZCSpG1NcGfIfHQ", sheet = "busqueda_inegi") %>% 
+  dplyr::rename(deci_lat=latitud, deci_lon=longitud) %>% 
+  keep_when(utilizar == 1) %>% 
+  keep_when(NOM_ENT %in% coast.selecc) %>% 
+  select(NOM_ENT, NOM_LOC, deci_lat, deci_lon)
+
+#test for duplicates 
+dupes.inegi <- locs.inegi %>% 
+  group_by(NOM_ENT, NOM_LOC) %>% 
+  mutate(dupe = dplyr::n()>1) %>% 
+  keep_when(dupe == TRUE)
+
+#get georeferenced locations from google
+locs.google <- googlesheets4::read_sheet("1Nww_0aSf2yQv9YqK8LqmJmIM2wwpHZCSpG1NcGfIfHQ", sheet = "busqueda_google") %>% 
+  dplyr::rename(NOM_LOC=NOM_LOC_REV, deci_lat=lat, deci_lon=lon) %>% 
+  keep_when(NOM_ENT %in% coast.selecc) %>% 
+  keep_when(utilizar == 1) %>% 
+  mutate(deci_lon=as.numeric(deci_lon), deci_lat=as.numeric(deci_lat)) %>% 
+  select(NOM_ENT, NOM_LOC, deci_lat, deci_lon)
+
+#test for duplicates 
+dupes.google <- locs.google %>% 
+  group_by(NOM_ENT, NOM_LOC) %>% 
+  mutate(dupe = dplyr::n()>1)
+
+#Atlas fishing locations Pacific
+locs.pesca.pacifico <- googlesheets4::read_sheet("1KxO30FqYed655frJDiLobx3N-slFNpNLpHnbxE4cLcI") %>% 
+  dplyr::rename(NOM_ENT= ESTADO, NOM_LOC = LOCALIDAD_REVISADA) %>% 
+  mutate(NOM_ENT= stringi::stri_trans_general(str = NOM_ENT, id = "Latin-ASCII"), NOM_ENT = toupper(NOM_ENT)) %>% 
+  mutate(NOM_LOC = stringi::stri_trans_general(str = NOM_LOC, id = "Latin-ASCII"), NOM_LOC = toupper(NOM_LOC)) %>% 
+  select(-LOCALIDAD_ORIGINAL, -ID) %>% 
+  dplyr::rename(deci_lat =LATITUD, deci_lon=LONGITUD) %>% 
+  keep_when(NOM_ENT %in% coast.selecc) %>% 
+   select(NOM_ENT, NOM_LOC, deci_lat, deci_lon)
+
+
+#test for duplicates 
+dupes.pacifico <- locs.pesca.pacifico %>% 
+  group_by(NOM_ENT, NOM_LOC) %>% 
+  mutate(dupe = dplyr::n()>1)
+
+#combine all locations
+georef.locs <- dplyr::bind_rows(locs.census, locs.inegi, locs.google, locs.pesca.pacifico) %>% 
+  distinct(NOM_ENT, NOM_LOC, deci_lat, deci_lon) 
+
+#make spatial
+
+georef.locs.sp <- georef.locs %>% 
+  sf::st_as_sf(coords = c("deci_lon", "deci_lat"), crs = 4326) %>% 
+  sf::st_transform(4269)
+
+#Add distance to nearest fishery office to help resolve duplicates when georeferincing a catch 
+
+fishery.offices <- sf::st_read(here::here("outputs","fishery_offices.shp")) 
+
+num.georef.locs <- 1:nrow(georef.locs.sp)
+
+#georef.locs.dist <- parallel::mclapply(num.georef.locs, get_distance, fishery.offices) 
+
+georef.locs.dist <- lapply(num.georef.locs, get_distance, fishery.offices) 
+
+georeflocskm <- georef.locs.dist %>% 
+ dplyr::bind_rows()
+
+readr::write_csv(georeflocskm, here::here("outputs","georef_locations.csv"))
+
+usethis::use_data(georeflocskm, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(georeflocskm)
+cat(data.description, file=here::here("R",paste0("data-","georeflocskm")))
+
+#rebuild and load the package
+devtools::load_all() # restarts and loads
+
+```
+
+
+Georeference unique locations
+```{r Georeference locations, echo=TRUE}
+
+data("catchlocations")
+
+data("georeflocskm")
+
+
+georefcatchlocs <- georef_catch(catchlocations, georeflocskm)
+  
+usethis::use_data(georefcatchlocs, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(georefcatchlocs)
+cat(data.description, file=here::here("R",paste0("data-","georefcatchlocs")))
+
+#rebuild and load the package
+devtools::load_all() # restarts and loads
+
+```
+
+Get permit information from the Registro Nacional de Pesca y Acuacultura RNPA and georeference
+https://www.gob.mx/conapesca/documentos/registro-nacional-de-pesca-y-acuacultura-rnpa
+
+```{r Get permit data, echo=TRUE, message=TRUE, warning=TRUE}
+
+data("georeflocskm")
+
+locs.pesca <- clean_locs_pesca()
+
+ents.coast.selecc <- toupper(c("Baja California Sur", "Baja California", "Sonora", "Sinaloa", "Nayarit", "Jalisco"))
+coast.selecc <- stringi::stri_trans_general(str = ents.coast.selecc, id = "Latin-ASCII")
+
+inegi.cost.comm.all  <- readr::read_csv(here::here("inputs","all_coastal_communities_INEGI.csv")) %>% 
+  mutate(NOM_ENT= stringi::stri_trans_general(str = NOM_ENT, id = "Latin-ASCII"), NOM_ENT = toupper(NOM_ENT)) %>% 
+  mutate(NOM_MUN = stringi::stri_trans_general(str = NOM_MUN, id = "Latin-ASCII"), NOM_MUN = toupper(NOM_MUN)) %>% 
+  mutate(NOM_LOC = stringi::stri_trans_general(str = NOM_LOC, id = "Latin-ASCII"), NOM_LOC = toupper(NOM_LOC)) %>% 
+  keep_when(NOM_ENT %in% coast.selecc)
+
+inegi.cost.mun <- inegi.cost.comm.all %>% 
+  distinct(NOM_MUN, CVE_MUN)
+
+permit.files <- list.files(path = here::here("data-raw","permit_data"), full.names = TRUE)
+no.permitfiles <- 1:length(permit.files)
+
+permit.data <- lapply(no.permitfiles, extract_permits, permit.files, coast.selecc, locs.pesca, georeflocskm)
+
+permitdata <- permit.data %>% 
+  dplyr::bind_rows() %>% 
+  distinct(rnp_code, NOM_LOC, NOM_ENT, deci_lat, deci_lon, fishery_office, fishery_office_ent, distance_km)
+
+
+usethis::use_data(permitdata, overwrite = TRUE)
+#creates template describing the data
+data.description <-sinew::makeOxygen(permitdata)
+cat(data.description, file=here::here("R",paste0("data-","permitdata")))
+
+#rebuild and load the package
+devtools::load_all() # restarts and loads
+
+readr::write_csv(permitdata, here::here("outputs","rnp_fishery_permits.csv"))
+
+
+```
+
+
+Georeference all catch data
+```{r Georeference catch, echo=TRUE}
+
+data("georefcatchlocs")
+data("catchdata")
+data("permitdata")
+
+if(file.exists("outputs/gpkg_grid.gpkg")) file.remove("outputs/gpkg_grid.gpkg")
+
+catch.plot.inter <- georef_catch_data(georefcatchlocs, catchdata)
+
+#plotly::ggplotly(catch.plot.inter)
+
+catch.plot.inter
+
+```
+
+
+```{r extractcatchspatial, echo=TRUE}
+
+
+catch.pacific <- sf::st_read(here::here("outputs","gpkg_grid.gpkg"), layer='goc_catch') %>% 
+    sf::st_transform(crs = 6362)
+ 
+rgi.shape <- sf::st_read(here::here("data-raw","SHP","Región de las Grandes Islas (1).shp"))
+
+rgi.shape.buffer <- rgi.shape %>% 
+    sf::st_transform(crs = 6362) %>% 
+  sf::st_buffer(75000)
+
+sf::st_write(rgi.shape.buffer, here::here("outputs","rgi_buffer.shp"), delete_layer=TRUE)
+
+ plot.buffer <- ggplot2::ggplot(rgi.shape.buffer) + 
+    ggplot2::geom_sf(fill = "lightgreen") +
+    ggplot2::geom_sf(data = rgi.shape, color = "darkred") +
+    ggplot2::geom_sf(data = catch.pacific, color = "darkblue") +
+      ggplot2::labs(x = "Longitude",
+                  y="Latitude") +
+   ggspatial::annotation_north_arrow(
+    location = "bl",             # "bl" = bottom left, "tr" = top right, etc.
+    which_north = "true",        # "true" (North Pole) or "grid" (top of map)
+    pad_x = ggplot2::unit(0.2, "in"),     # Horizontal distance from edge
+    pad_y = ggplot2::unit(0.2, "in"),     # Vertical distance from edge
+    style = ggspatial::north_arrow_fancy_orienteering() # Choose arrow visual style
+  ) +
+   ggthemes::theme_map()
+ 
+ #extract catch points with buffer
+ 
+buffer.catch <- sf::st_intersection(catch.pacific, rgi.shape.buffer)
+
+ sf::st_write(buffer.catch, dsn=here::here("outputs", "gpkg_grid.gpkg"), layer='rgi_catch', layer_options = "OVERWRITE=YES", append = FALSE)
+
+ 
+ rgi.catch <- sf::st_drop_geometry(buffer.catch) %>% 
+   dplyr::select(rnp_code, NOM_LOC, NOM_ENT, fishery_office, species, landed_w_kg, value_mxn, year, month) %>% 
+   tidyr::as_tibble()
+ 
+rgi.catch.plot <- rgi.catch %>% 
+  dplyr::summarise(tot_w_kg = sum(landed_w_kg), .by=c("species","year","NOM_ENT")) %>% 
+  dplyr::mutate(tot_w_ton = tot_w_kg/1000) %>% 
+  dplyr::filter(tot_w_ton > 100) %>% 
+ ggplot2::ggplot(ggplot2::aes(x = year, y = tot_w_ton, fill = NOM_ENT)) +
+  ggplot2::geom_col() +
+   ggplot2::facet_wrap(~species) +
+  ggplot2::labs(title = "Captura Región de Grandes Islas", x = "Año", y = "Captura toneladas", fill = "Entidad") +
+   ggplot2::theme(legend.position = "bottom")
+
+
+rgi.catch.mean.plot <- rgi.catch %>% 
+  dplyr::summarise(tot_w_kg = mean(landed_w_kg), .by=c("species","fishery_office","NOM_ENT")) %>% 
+  dplyr::mutate(tot_w_ton = tot_w_kg/1000) %>% 
+ ggplot2::ggplot(ggplot2::aes(x = NOM_ENT, y = tot_w_ton, fill = NOM_ENT)) +
+  ggplot2::geom_bar(stat="identity") +
+   ggplot2::facet_wrap(~species) +
+  ggplot2::labs(title = "Captura Región de Grandes Islas", x = "Año", y = "Captura toneladas", fill = "Entidad") +
+   ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, vjust = 1, hjust = 1))
+
+ rgi.catch %>% data.table::fwrite(here::here("outputs","captura_rgi_2018-2025.csv"))
+
+ #rgi.catch <- data.table::fread(here::here("outputs","captura_rgi_2018-2025.csv"))
+
+```

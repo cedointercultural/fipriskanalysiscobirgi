@@ -1,17 +1,15 @@
-Package: fipriskanalysissmfish
-Title: Risk analysis fishing cooperatives
+Package: fipriskanalysiscobirgi
+Title: Risk analysis Region Grandes Islas
 Version: 0.0.0.9000
 Authors@R: 
-    person("Hem Nalini", "Morzaria-Luna", , "first.last@example.com", role = c("aut", "cre"),
-           comment = c(ORCID = "YOUR-ORCID-ID"))
+    person("Hem Nalini", "Morzaria-Luna", "hemnalini@cedo.org", role = c("aut"),
+           comment = c(ORCID = "orcid.org/0000-0001-5265-1049))
 Description: What the package does (one paragraph).
-License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
-    license
+License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.2
 Depends: 
-    R (>= 2.10)
+    R (>= 3.5)
 LazyData: true
 Imports: 
     dplyr,
@@ -39,3 +37,4 @@ Imports:
     grid
 Remotes:
     adamlilith/enmSdmX
+Config/roxygen2/version: 8.0.0

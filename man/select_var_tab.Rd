@@ -6,9 +6,6 @@
 \usage{
 select_var_tab(namesdata, datatable, scenario, id.cols, expohist.bc)
 }
-\arguments{
-\item{sspscenario}{}
-}
 \value{
 num.scale data with scaled total
 }

@@ -6,9 +6,6 @@
 \usage{
 scale_var_expo(datatable, sspscenario, vars.expo, fiplocal.id)
 }
-\arguments{
-\item{sspscenario}{}
-}
 \value{
 num.scale data with scaled total
 }

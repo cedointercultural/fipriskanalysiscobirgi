@@ -6,9 +6,6 @@
 \usage{
 scale_var(datatable, sspscenario)
 }
-\arguments{
-\item{sspscenario}{}
-}
 \value{
 num.scale data with scaled total
 }

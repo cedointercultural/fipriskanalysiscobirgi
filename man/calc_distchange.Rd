@@ -14,21 +14,6 @@ calc_distchange(
   sdm.scenarios
 )
 }
-\arguments{
-\item{eachspecies}{}
-
-\item{sdm.species}{}
-
-\item{crs.eqap}{}
-
-\item{sdm.names}{}
-
-\item{sdm.files}{}
-
-\item{present.name}{}
-
-\item{sdm.scenarios}{}
-}
 \description{
 Calculate distance change in future distribution
 }

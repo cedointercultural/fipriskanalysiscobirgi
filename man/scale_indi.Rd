@@ -6,9 +6,6 @@
 \usage{
 scale_indi(datatable, loc.fip.expo)
 }
-\arguments{
-\item{sspscenario}{}
-}
 \value{
 num.scale data with scaled total
 }
