@@ -602,13 +602,14 @@ heatmap.plot.resource <- resource.data.norm %>%
 ggplot2::ggsave("resource_heatmap.png", heatmap.plot.resource, path = here::here("outputs", "figures"),
                 dpi = 400, width = 8, height = 6, scale = 1)
 
-#promedio 
+#promedio
 heatmap.plot.resource.mean <- resource.data.norm %>%
   dplyr::summarise(mean_PC1=mean(PC1), .by=name) %>%
   dplyr::mutate(name = forcats::fct_reorder(name, mean_PC1, .desc = TRUE)) %>%
   ggplot2::ggplot(ggplot2::aes(x = name, y=mean_PC1, fill=name)) +
 #  ggplot2::geom_tile(color = "white", linewidth = 0.5) +
  ggplot2::geom_bar(stat="identity") +
+  ggplot2::geom_text(ggplot2::aes(label = round(mean_PC1, 2)), vjust = -0.5, size = 4) +
   ggplot2::scale_fill_manual(values = colorRampPalette(RColorBrewer::brewer.pal(9, "Set1"))(length(resource_order))) +
   ggplot2::labs(
     title = "",
@@ -620,13 +621,12 @@ heatmap.plot.resource.mean <- resource.data.norm %>%
   ggplot2::theme(
     axis.title.x = ggplot2::element_text(face = "bold", size = 14, margin = ggplot2::margin(t = 15)),
     axis.title.y = ggplot2::element_text(face = "bold", size = 14),
-    axis.text.x = ggplot2::element_text(vjust = 1, hjust = 1, angle = 45, margin = ggplot2::margin(t = 0, r = 0, b = -15, l = 0)),
+    axis.text.x = ggplot2::element_text(size = 13, vjust = 1, hjust = 1, angle = 45, margin = ggplot2::margin(t = 0, r = 0, b = -15, l = 0)),
     axis.text.y = ggplot2::element_text(size = 12),
     plot.caption = ggplot2::element_text(size = 12),
-    legend.position = "bottom"
+    legend.position = "none"
   )
 
 ggplot2::ggsave("resource_heatmap_mean.png", heatmap.plot.resource.mean, path = here::here("outputs", "figures"),
-                dpi = 400, width = 8, height = 6, scale = 1)
-```
+                dpi = 400, width = 15, height = 7, scale = 1)```
 
